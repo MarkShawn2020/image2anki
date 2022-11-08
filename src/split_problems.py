@@ -4,8 +4,6 @@ author: https://github.com/MarkShawn2020
 create: Nov 08, 2022, 21:24
 """
 
-#%%
-
 # %config InlineBackend.figure_format = 'retina'
 import numpy as np
 from enum import Enum
@@ -21,8 +19,8 @@ class HeadType(int, Enum):
 
 
 HeadTypeColorMap = {
-    HeadType.PROBLEM: 'blue',
-    HeadType.TITLE: 'gray',
+    HeadType.PROBLEM : 'blue',
+    HeadType.TITLE   : 'gray',
     HeadType.CONTINUE: 'green',
 }
 
@@ -35,7 +33,6 @@ class BaseBlock(TypedDict):
 class Block(BaseBlock):
     head: HeadType
 
-#%%
 
 # 一个区块的最小高度，低于这个高度的可能是有噪点的空白行
 MIN_BLOCK_HEIGHT = 5
@@ -79,7 +76,7 @@ FONT = ImageFont.truetype(font='/System/Library/Fonts/PingFang.ttc', size=30)
 
 def is_point_blue(p):
     ans = p[2] / (p[0] + p[1] + 1e-10) * 2 > 1
-#     print({"p": p, "ans": ans})
+    #     print({"p": p, "ans": ans})
     return ans
 
 
@@ -112,7 +109,7 @@ def checkHeadType(img, block: Block, blue_xs: Tuple[int]):
     if val > .05:
         return HeadType.PROBLEM
 
-    if (1-data).mean() < .05:
+    if (1 - data).mean() < .05:
         return HeadType.CONTINUE
 
     return HeadType.TITLE
@@ -205,7 +202,7 @@ def doDraw(img, blocks: List[Block], blue_xs):
                 stroke_width=1
             )
             draw.text(
-                (0, y1-50),
+                (0, y1 - 50),
                 f'{y1}',
                 font=FONT,
                 fill='magenta',
@@ -214,14 +211,14 @@ def doDraw(img, blocks: List[Block], blue_xs):
 
         if DRAW_BLOCK_CONTUOUR:
             draw.rectangle(
-                (MARGIN_LEFT_PCT*w, y0, w - MARGIN_LEFT_PCT*w*2, y1),
+                (MARGIN_LEFT_PCT * w, y0, w - MARGIN_LEFT_PCT * w * 2, y1),
                 outline='red'
             )
 
         if DRAW_BLOCK_TYPE and not MERGE_CONTUOURS:
             draw.rectangle(
-                (MARGIN_LEFT_PCT*w, y0, MARGIN_LEFT_PCT*w +
-                 DRAW_BLOCK_TYPE_SQUARE_SIZE, y0+DRAW_BLOCK_TYPE_SQUARE_SIZE),
+                (MARGIN_LEFT_PCT * w, y0, MARGIN_LEFT_PCT * w +
+                 DRAW_BLOCK_TYPE_SQUARE_SIZE, y0 + DRAW_BLOCK_TYPE_SQUARE_SIZE),
                 fill=HeadTypeColorMap[block['head_type']]
             )
 
@@ -230,7 +227,7 @@ def doDraw(img, blocks: List[Block], blue_xs):
         ly0, ly1 = p1['value']
         if DRAW_HEIGHT_BETWEEN_BLOCKS:
             draw.text(
-                (0, y0-30),
+                (0, y0 - 30),
                 f'{y0 - ly1}↑',
                 font=FONT,
                 fill='magenta',
@@ -238,9 +235,9 @@ def doDraw(img, blocks: List[Block], blue_xs):
             )
 
 
-def main(img_path):
-    print(f'handling file://{img_path}')
-    img = Image.open(img_path)
+def splitProblems(fp):
+    print(f'handling file://{fp}')
+    img = Image.open(fp)
     dropQrCode(img)
     blocks = getBaseBlocks(img)
     blue_xs = ensure_blue_xs(img)
@@ -255,7 +252,6 @@ def main(img_path):
     # plt.show()
 
 
-for page in range(5, 8):
-    main(f'../data/images/{page}.jpg')
-
-
+if __name__ == '__main__':
+    for page in range(5, 8):
+        splitProblems(f'../data/images/{page}.jpg')
