@@ -5,11 +5,15 @@ create: Nov 08, 2022, 21:24
 """
 
 # %config InlineBackend.figure_format = 'retina'
+import os.path
+
 import numpy as np
 from enum import Enum
 from typing import TypedDict, List, Tuple
 import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+from src.settings import PDF_IMAGES_RAW_DIR, PDF_IMAGES_DRAW_DIR
 
 
 class HeadType(int, Enum):
@@ -34,13 +38,21 @@ class Block(BaseBlock):
     head: HeadType
 
 
+# .05 第24张通不过，大多数都可以
+MIN_BLOCK_IS_PROBLEM_PCT = .03
+
 # 一个区块的最小高度，低于这个高度的可能是有噪点的空白行
-MIN_BLOCK_HEIGHT = 5
+# 如果有些分子分母被该参数排除了，问题不大，可以输出时基于 padding 解决
+MIN_BLOCK_HEIGHT = 6
 
 # 判定两个区块之间的最小高度差，低于则合并
 # 经过验证，无法通过区块之间的高度差区分大题与小题 :(
 # 比9低就不能把一些分子分母粘合一起了，不过可以后续再合并
-MIN_HEIGHT_BETWEEN_BLOCKS = 9
+# 比11低就无法合并第29张第1题
+MIN_HEIGHT_BETWEEN_BLOCKS = 11
+
+# 没合并正确的基本都是一些游离的分子分母，可以输出时基于 padding 解决
+CROP_PADDING_Y = MIN_HEIGHT_BETWEEN_BLOCKS - 1
 
 # 判断一行是否非空白行的最小有效点数
 MIN_NON_WHITE_POINTS_IN_ROW = 1
@@ -58,12 +70,15 @@ MAX_BLUE_X = 300
 
 DRAW_BLOCK_TYPE_SQUARE_SIZE = 20
 
-MERGE_CONTUOURS = True
+MERGE_CONTOURS = True
 
+DRAW_BLUE_XS = True
 DRAW_BLOCK_TYPE = True
-DRAW_BLOCK_YS = False
-DRAW_BLOCK_CONTUOUR = True
+DRAW_BLOCK_CONTOUR = True
+DRAW_BLOCK_COORDS = False
 DRAW_HEIGHT_BETWEEN_BLOCKS = False
+
+SHOW_BLUE_XS_DISTRIBUTION = False
 
 QR_MARGIN = 25
 QR_RADIUS = 100
@@ -75,19 +90,27 @@ FONT = ImageFont.truetype(font='/System/Library/Fonts/PingFang.ttc', size=30)
 
 
 def is_point_blue(p):
-    ans = p[2] / (p[0] + p[1] + 1e-10) * 2 > 1
+    """
+    原先用的 2 * B / (R + G) 结果有些页面跑不通过
+    B / R 也不可以
+    要用 B / G，也就是蓝色显著比绿色多
+    :param p:
+    :return:
+    """
+    ans = p[2] / (p[1] + 1e-10) > 1
     #     print({"p": p, "ans": ans})
     return ans
 
 
 def ensure_blue_xs(img):
     data = (255 - np.array(img)) / 255
+    cols = np.apply_along_axis(np.mean, 0, data)
+    ratio = np.apply_along_axis(is_point_blue, -1, cols)
 
-    def handle_col(col):
-        return np.mean(col)
+    if SHOW_BLUE_XS_DISTRIBUTION:
+        plt.bar(range(len(ratio)), ratio)
+        plt.show()
 
-    cols = np.apply_along_axis(handle_col, 0, data)
-    ratio = np.apply_along_axis(is_point_blue, 1, cols)
     blue_low = blue_high = None
     for i, j in enumerate(ratio[MIN_BLUE_X:MAX_BLUE_X]):
         if j:
@@ -96,21 +119,26 @@ def ensure_blue_xs(img):
             blue_high = i
     assert blue_low and blue_high
     ans = (MIN_BLUE_X + blue_low, MIN_BLUE_X + blue_high)
-    print(f'blue_xs: {ans}')
+    # print(f'blue_xs: {ans}')
     return ans
 
 
 def checkHeadType(img, block: Block, blue_xs: Tuple[int]):
+    w, h = img.size
     y0, y1 = block['value']
     x0, x1 = blue_xs
     data = np.array(img)[y0:y1, x0:x1] / 255
 
     val = np.apply_along_axis(is_point_blue, -1, data).mean()
-    if val > .05:
+    if val > MIN_BLOCK_IS_PROBLEM_PCT:
         return HeadType.PROBLEM
 
     if (1 - data).mean() < .05:
-        return HeadType.CONTINUE
+        # 大标题还需要从中间去确定
+        data2 = np.array(img.convert('L'))[y0:y1, int(.4 * w):int(.6 * w)]
+        big_title_gray = np.where(data2 > 250, 255, data2).mean()
+        if big_title_gray > 200:
+            return HeadType.CONTINUE
 
     return HeadType.TITLE
 
@@ -190,10 +218,14 @@ def getBaseBlocks(img) -> List[BaseBlock]:
 def doDraw(img, blocks: List[Block], blue_xs):
     w, h = img.size
     draw = ImageDraw.Draw(img)
+
+    if DRAW_BLUE_XS:
+        draw.rectangle((blue_xs[0], int(.01 * h), blue_xs[1], int((TOP_PCT - .01) * h)), fill='blue')
+
     for block in blocks:
         y0, y1 = block['value']
 
-        if DRAW_BLOCK_YS:
+        if DRAW_BLOCK_COORDS:
             draw.text(
                 (0, y0),
                 f'{y0}',
@@ -209,17 +241,17 @@ def doDraw(img, blocks: List[Block], blue_xs):
                 stroke_width=1
             )
 
-        if DRAW_BLOCK_CONTUOUR:
+        if DRAW_BLOCK_CONTOUR:
             draw.rectangle(
                 (MARGIN_LEFT_PCT * w, y0, w - MARGIN_LEFT_PCT * w * 2, y1),
                 outline='red'
             )
 
-        if DRAW_BLOCK_TYPE and not MERGE_CONTUOURS:
+        if DRAW_BLOCK_TYPE and not MERGE_CONTOURS:
             draw.rectangle(
                 (MARGIN_LEFT_PCT * w, y0, MARGIN_LEFT_PCT * w +
                  DRAW_BLOCK_TYPE_SQUARE_SIZE, y0 + DRAW_BLOCK_TYPE_SQUARE_SIZE),
-                fill=HeadTypeColorMap[block['head_type']]
+                fill=HeadTypeColorMap[block['headType']]
             )
 
     for p1, p2 in zip(blocks[:-1], blocks[1:]):
@@ -235,23 +267,31 @@ def doDraw(img, blocks: List[Block], blue_xs):
             )
 
 
-def splitProblems(fp):
+def splitProblems(fp, show=False, save=True):
     print(f'handling file://{fp}')
     img = Image.open(fp)
     dropQrCode(img)
     blocks = getBaseBlocks(img)
+    print(blocks)
     blue_xs = ensure_blue_xs(img)
     for block in blocks:
         block['headType'] = checkHeadType(img, block, blue_xs)
-    if MERGE_CONTUOURS:
+    if MERGE_CONTOURS:
         blocks = mergeBlocks(blocks)
     doDraw(img, blocks, blue_xs)
-    img.show()
+    if show:
+        img.show()
+    if save:
+        fn = os.path.basename(fp)
+        fp_out = os.path.join(PDF_IMAGES_DRAW_DIR, fn)
+        print(f'saving into file://{fp_out}')
+        img.save(fp_out)
     # plt.figure(figsize=(12,16), dpi=200)
     # plt.imshow(img)
     # plt.show()
 
 
 if __name__ == '__main__':
-    for page in range(5, 8):
-        splitProblems(f'../data/images/{page}.jpg')
+    splitProblems(os.path.join(PDF_IMAGES_RAW_DIR, f'lzy-{28:03d}.jpg'))
+
+    # for page in range(5, 53): splitProblems(os.path.join(PDF_IMAGES_RAW_DIR, f'lzy-{page:03d}.jpg'))
