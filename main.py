@@ -8,7 +8,7 @@ from argparse import ArgumentParser
 
 from src.pdf2images import pdf2images
 
-from src.split_problems import splitProblems
+from src.parseLZY.parseQuestionPage import splitProblems
 
 
 if __name__ == '__main__':
