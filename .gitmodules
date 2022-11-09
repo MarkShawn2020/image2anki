@@ -1,0 +1,3 @@
+[submodule "packages/genanki"]
+	path = packages/genanki
+	url = ./packages/genanki
